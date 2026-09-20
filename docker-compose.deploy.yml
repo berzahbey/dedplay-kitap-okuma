@@ -3,7 +3,7 @@ services:
     image: berzahbey/dedplay-kitap-okuma:latest
     container_name: dedplay-kitap-okuma
     ports:
-      - "8012:8000"
+      - "8020:8000"
     volumes:
       - ./books:/app/books
       - ./audio:/app/audio
