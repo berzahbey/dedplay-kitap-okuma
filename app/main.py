@@ -1,11 +1,15 @@
 import os
 import re
 import json
+from urllib.parse import quote
 import subprocess
 import requests
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, Request, HTTPException
+from fastapi.responses import HTMLResponse, StreamingResponse
+import mimetypes
+mimetypes.add_type('audio/mp4', '.m4b')
+mimetypes.add_type('audio/mp4', '.m4a')
 import fitz
 import ebooklib
 from ebooklib import epub
@@ -16,6 +20,7 @@ from app.cleaner import TextNormalizer
 from app.lang_router import group_by_language
 
 app = FastAPI(title="Dedplay Kitap Okuma")
+
 
 BOOKS_DIR = Path("/app/books")
 AUDIO_DIR = Path("/app/audio")
@@ -225,6 +230,80 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
 def get_status():
     return job_status
 
+@app.get("/library")
+def get_library():
+    books = []
+    for book_dir in sorted(AUDIO_DIR.iterdir()):
+        if not book_dir.is_dir():
+            continue
+        m4b_files = list(book_dir.glob("*.m4b"))
+        if not m4b_files:
+            continue
+        enc_dir = quote(book_dir.name)
+        books.append({
+            "title": book_dir.name,
+            "m4b": f"/audio-files/{enc_dir}/{quote(m4b_files[0].name)}"
+        })
+    return {"books": books}
+
+CHUNK_SIZE = 1024 * 1024  # 1 MB
+
+@app.get("/audio-files/{book_name}/{file_name}")
+async def stream_audio(book_name: str, file_name: str, request: Request):
+    file_path = AUDIO_DIR / book_name / file_name
+    if not file_path.exists():
+        raise HTTPException(404, "Dosya bulunamadı")
+
+    file_size = file_path.stat().st_size
+    content_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+    range_header = request.headers.get("range")
+
+    if range_header:
+        try:
+            range_value = range_header.strip().split("=")[1]
+            start_str, end_str = range_value.split("-")
+            start = int(start_str) if start_str else 0
+            end = int(end_str) if end_str else file_size - 1
+        except (IndexError, ValueError):
+            start, end = 0, file_size - 1
+        end = min(end, file_size - 1)
+        chunk_size = end - start + 1
+
+        def iterfile():
+            with open(file_path, "rb") as f:
+                f.seek(start)
+                remaining = chunk_size
+                while remaining > 0:
+                    read_size = min(CHUNK_SIZE, remaining)
+                    data = f.read(read_size)
+                    if not data:
+                        break
+                    remaining -= len(data)
+                    yield data
+
+        headers = {
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(chunk_size),
+            "Content-Type": content_type,
+        }
+        return StreamingResponse(iterfile(), status_code=206, headers=headers)
+
+    def iterfile_full():
+        with open(file_path, "rb") as f:
+            while True:
+                data = f.read(CHUNK_SIZE)
+                if not data:
+                    break
+                yield data
+
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(file_size),
+        "Content-Type": content_type,
+    }
+    return StreamingResponse(iterfile_full(), headers=headers)
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     return """
@@ -254,6 +333,9 @@ def index():
             </div>
             <button onclick="uploadFile()">Dönüşümü Başlat</button>
             <div class="status-list" id="statusList">Aktif işlem yok</div>
+
+            <h2 style="color:#38bdf8; font-size:16px; margin-top:30px;">📖 Tamamlanan Kitaplar</h2>
+            <div id="libraryList" style="margin-top:10px;"></div>
         </div>
         <script>
             let selectedFile = null;
@@ -283,6 +365,23 @@ def index():
                 list.innerHTML = keys.length === 0 ? 'Aktif işlem yok' : keys.map(k => `<div class="job-item"><b>${k}</b><span>${data[k].progress}</span></div>`).join('');
             }
             setInterval(pollStatus, 3000); pollStatus();
+
+            async function loadLibrary() {
+                const res = await fetch('/library');
+                const data = await res.json();
+                const container = document.getElementById('libraryList');
+                if (data.books.length === 0) {
+                    container.innerHTML = '<p style="color:#94a3b8; font-size:13px;">Henüz tamamlanmış kitap yok.</p>';
+                    return;
+                }
+                container.innerHTML = data.books.map(book => {
+                    return `<div style="background:#0f172a; padding:12px; border-radius:8px; margin-bottom:10px;">
+                        <b>${book.title}</b>
+                        <audio controls preload="none" style="width:100%; margin-top:8px;"><source src="${book.m4b}" type="audio/mp4"></audio>
+                    </div>`;
+                }).join('');
+            }
+            loadLibrary();
         </script>
     </body>
     </html>
