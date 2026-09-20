@@ -1,7 +1,7 @@
 services:
   dedplay-kitap-okuma:
     image: berzahbey/dedplay-kitap-okuma:latest
-    container_name: dedplay-kitap-okuma-v2
+    container_name: dedplay-kitap-okuma-v2-v2
     ports:
       - "8020:8000"
     volumes:
