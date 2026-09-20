@@ -3,7 +3,12 @@ import re
 import json
 from urllib.parse import quote
 import subprocess
+import wave
 import requests
+import multiprocessing
+import fcntl
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from piper import PiperVoice
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, BackgroundTasks, Request, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -30,6 +35,8 @@ AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 job_status = {}
+_VOICE_CACHE = {}
+MAX_WORKERS = max(1, min(4, multiprocessing.cpu_count() // 2))
 
 VOICES = {
     "tr": {"name": "tr_TR-dfki-medium",
@@ -50,19 +57,38 @@ def ensure_voice_model(lang: str) -> str:
     voice = VOICES[lang]
     onnx_path = MODEL_DIR / f"{voice['name']}.onnx"
     json_path = MODEL_DIR / f"{voice['name']}.onnx.json"
-    if not onnx_path.exists():
-        r = requests.get(voice["onnx"]); onnx_path.write_bytes(r.content)
-    if not json_path.exists():
-        r = requests.get(voice["json"]); json_path.write_bytes(r.content)
+    lock_path = MODEL_DIR / f"{voice['name']}.lock"
+
+    with open(lock_path, "w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            if not onnx_path.exists() or onnx_path.stat().st_size < 1_000_000:
+                tmp_path = onnx_path.with_suffix(".onnx.tmp")
+                r = requests.get(voice["onnx"])
+                tmp_path.write_bytes(r.content)
+                tmp_path.rename(onnx_path)
+            if not json_path.exists():
+                tmp_json = json_path.with_suffix(".onnx.json.tmp")
+                r = requests.get(voice["json"])
+                tmp_json.write_bytes(r.content)
+                tmp_json.rename(json_path)
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
     return str(onnx_path)
 
+def get_piper_voice(lang: str) -> PiperVoice:
+    if lang not in _VOICE_CACHE:
+        model_file = ensure_voice_model(lang)
+        _VOICE_CACHE[lang] = PiperVoice.load(model_file)
+    return _VOICE_CACHE[lang]
+
 def synthesize_block(text: str, lang: str, out_wav: Path):
-    model_file = ensure_voice_model(lang)
-    cmd = ["piper", "--model", model_file, "--output_file", str(out_wav)]
-    process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    stdout, stderr = process.communicate(input=text)
-    if process.returncode != 0:
-        raise RuntimeError(f"Piper error ({lang}): {stderr}")
+    voice = get_piper_voice(lang)
+    with wave.open(str(out_wav), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(voice.config.sample_rate)
+        voice.synthesize_wav(text, wav_file)
 
 def synthesize_chapter(text: str, output_path: Path):
     blocks = group_by_language(text)
@@ -204,11 +230,30 @@ def process_book_pipeline(filename: str):
         out_book_dir.mkdir(parents=True, exist_ok=True)
         chapters = parse_epub(file_path) if file_path.suffix.lower() == '.epub' else parse_pdf(file_path)
         total = len(chapters)
-        for i, (title, text) in enumerate(chapters):
+
+        pending = []
+        done_count = 0
+        for title, text in chapters:
             out_mp3 = out_book_dir / f"{title}.mp3"
-            if not out_mp3.exists():
-                synthesize_chapter(text, out_mp3)
-            job_status[filename] = {"status": "processing", "progress": f"Bölüm {i+1}/{total} bitti"}
+            if out_mp3.exists():
+                done_count += 1
+            else:
+                pending.append((title, text, out_mp3))
+
+        job_status[filename] = {"status": "processing", "progress": f"Bölüm {done_count}/{total} bitti"}
+
+        if pending:
+            with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                future_to_title = {
+                    executor.submit(synthesize_chapter, text, out_mp3): title
+                    for title, text, out_mp3 in pending
+                }
+                for future in as_completed(future_to_title):
+                    title = future_to_title[future]
+                    future.result()  # hata varsa burada raise eder
+                    done_count += 1
+                    job_status[filename] = {"status": "processing", "progress": f"Bölüm {done_count}/{total} bitti"}
+
         job_status[filename] = {"status": "processing", "progress": "Sesli kitap (m4b) birleştiriliyor..."}
         m4b_path = build_audiobook(out_book_dir, file_path.stem)
         m4b_info = f" -> {m4b_path.name}" if m4b_path else ""
