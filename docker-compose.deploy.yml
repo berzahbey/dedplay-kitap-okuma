@@ -1,0 +1,11 @@
+services:
+  dedplay-kitap-okuma:
+    image: berzahbey/dedplay-kitap-okuma:latest
+    container_name: dedplay-kitap-okuma
+    ports:
+      - "8012:8000"
+    volumes:
+      - ./books:/app/books
+      - ./audio:/app/audio
+      - ./voices:/root/.cache/piper
+    restart: unless-stopped
