@@ -1,0 +1,11 @@
+services:
+  dedplay-kitap-okuma:
+    build: .
+    container_name: dedplay-kitap-okuma
+    ports:
+      - "8011:8000"
+    volumes:
+      - ./books:/app/books
+      - ./audio:/app/audio
+      - ./voices:/root/.cache/piper
+    restart: unless-stopped
