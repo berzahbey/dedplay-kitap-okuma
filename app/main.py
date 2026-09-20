@@ -88,7 +88,7 @@ def synthesize_block(text: str, lang: str, out_wav: Path):
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
         wav_file.setframerate(voice.config.sample_rate)
-        voice.synthesize_wav(text, wav_file)
+        voice.synthesize(text, wav_file)
 
 def synthesize_chapter(text: str, output_path: Path):
     blocks = group_by_language(text)
