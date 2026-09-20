@@ -92,10 +92,35 @@ def synthesize_block(text: str, lang: str, out_wav: Path):
         wav_file.setframerate(voice.config.sample_rate)
         voice.synthesize(text, wav_file)
 
+MAX_BLOCK_CHARS = 2000
+
+def split_long_block(text: str, max_chars: int = MAX_BLOCK_CHARS):
+    """Çok uzun bir dil-bloğunu cümle sınırlarına saygı göstererek
+    daha küçük alt-parçalara böler; tek bir devasa senteze takılmayı önler."""
+    if len(text) <= max_chars:
+        return [text]
+    import re
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    parts = []
+    current = ""
+    for s in sentences:
+        if len(current) + len(s) + 1 > max_chars and current:
+            parts.append(current.strip())
+            current = s
+        else:
+            current = (current + " " + s).strip()
+    if current:
+        parts.append(current.strip())
+    return parts
+
 def synthesize_chapter(text: str, output_path: Path):
-    blocks = group_by_language(text)
-    if not blocks:
+    raw_blocks = group_by_language(text)
+    if not raw_blocks:
         return
+    blocks = []
+    for lang, block_text in raw_blocks:
+        for sub_text in split_long_block(block_text):
+            blocks.append((lang, sub_text))
     silence_gap = AudioSegment.silent(duration=180)
     tmp_dir = output_path.parent / f".tmp_{output_path.stem}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
