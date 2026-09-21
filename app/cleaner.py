@@ -88,5 +88,6 @@ class TextNormalizer:
             text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
         text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text)
         text = re.sub(r'\s+', ' ', text).strip()
+        text = cls.convert_numbers(text)
         text = apply_phonetics(text)
         return text

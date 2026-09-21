@@ -37,6 +37,10 @@ PHONETIC_OVERRIDES = {
     ".net": " net",
     ".org": " org",
     ".gov": " gav",
+    "The New York Times": "Nu York Taymz",
+    "New York Times": "Nu York Taymz",
+    "Le Monde": "Lö Mond",
+    "New York": "Nu York",
 }
 
 def apply_phonetics(text: str) -> str:
