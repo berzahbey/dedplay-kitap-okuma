@@ -4,6 +4,7 @@ import json
 from urllib.parse import quote
 import subprocess
 import wave
+import time
 import requests
 import multiprocessing
 import fcntl
@@ -77,12 +78,17 @@ def ensure_voice_model(lang: str) -> str:
     return str(onnx_path)
 
 def synthesize_block(text: str, lang: str, out_wav: Path):
+    t0 = time.time()
     model_file = ensure_voice_model(lang)
+    t1 = time.time()
     cmd = ["piper", "--model", model_file, "--output_file", str(out_wav)]
     process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     stdout, stderr = process.communicate(input=text)
+    t2 = time.time()
     if process.returncode != 0:
         raise RuntimeError(f"Piper error ({lang}): {stderr}")
+    logger_print = f"[TIMING] lang={lang} chars={len(text)} model_check={t1-t0:.2f}s synth={t2-t1:.2f}s"
+    print(logger_print, flush=True)
 
 MAX_BLOCK_CHARS = 2000
 
@@ -106,7 +112,10 @@ def split_long_block(text: str, max_chars: int = MAX_BLOCK_CHARS):
     return parts
 
 def synthesize_chapter(text: str, output_path: Path):
+    t_chapter_start = time.time()
     raw_blocks = group_by_language(text)
+    t_lang_done = time.time()
+    print(f"[TIMING] chapter={output_path.stem} text_len={len(text)} lang_detect={t_lang_done-t_chapter_start:.2f}s", flush=True)
     if not raw_blocks:
         return
     blocks = []
@@ -129,8 +138,12 @@ def synthesize_chapter(text: str, output_path: Path):
             interleaved.append(seg)
             interleaved.append(silence_gap)
         combined = sum(interleaved, AudioSegment.silent(duration=0))
+        t_synth_done = time.time()
+        print(f"[TIMING] chapter={output_path.stem} all_blocks_synth={t_synth_done-t_lang_done:.2f}s block_count={len(blocks)}", flush=True)
         raw_wav = output_path.with_suffix('.raw.wav')
         combined.export(raw_wav, format="wav")
+        t_export_done = time.time()
+        print(f"[TIMING] chapter={output_path.stem} wav_export={t_export_done-t_synth_done:.2f}s", flush=True)
         subprocess.run([
             "ffmpeg", "-y", "-i", str(raw_wav),
             "-codec:a", "libmp3lame", "-b:a", "192k",
