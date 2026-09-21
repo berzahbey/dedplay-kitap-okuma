@@ -41,6 +41,15 @@ PHONETIC_OVERRIDES = {
     "New York Times": "Nu York Taymz",
     "Le Monde": "Lö Mond",
     "New York": "Nu York",
+    "kâtip": "kiatip",
+    "Kâtip": "Kiatip",
+    "kâğıt": "kiağıt",
+    "Kâğıt": "Kiağıt",
+    "kâğıda": "kiağıda",
+    "kâğıdı": "kiağıdı",
+    "kâinat": "kiainat",
+    "kâr": "kiar",
+    "kâh": "kiah",
 }
 
 def apply_phonetics(text: str) -> str:
