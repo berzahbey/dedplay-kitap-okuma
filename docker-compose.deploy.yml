@@ -1,11 +1,16 @@
 services:
-  dedplay-kitap-okuma:
+  dedplay-kitap-okuma-v2:
     image: berzahbey/dedplay-kitap-okuma:latest
-    container_name: dedplay-kitap-okuma-v2-v2
+    container_name: dedplay-kitap-okuma-v2
     ports:
       - "8020:8000"
     volumes:
-      - ./books:/app/books
-      - ./audio:/app/audio
-      - ./voices:/root/.cache/piper
+      - "/media/ZimaOS-HD/dedplay seslendirme/book:/app/books"
+      - "/media/ZimaOS-HD/Media/Music/audio:/app/audio"
+      - "/media/ZimaOS-HD/dedplay seslendirme/dedplay seslendirme-voices:/root/.cache/piper"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "20.00"
+          memory: 31.09GB
