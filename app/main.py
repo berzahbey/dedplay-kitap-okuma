@@ -502,16 +502,22 @@ def index():
                 renderBreadcrumb(data.path);
                 renderBrowseList(data.folders, data.files);
             }
+            function escAttr(s) {
+                return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+            }
             function renderBreadcrumb(path) {
                 const el = document.getElementById('breadcrumb');
                 const parts = path ? path.split('/') : [];
-                let html = '<span style="cursor:pointer; color:#38bdf8;" onclick="loadBrowse(\'\')">📁 Kök</span>';
+                let html = '<span style="cursor:pointer; color:#38bdf8;" data-path="">📁 Kök</span>';
                 let acc = "";
                 for (const part of parts) {
                     acc = acc ? acc + '/' + part : part;
-                    html += ' / <span style="cursor:pointer; color:#38bdf8;" onclick="loadBrowse(\'' + acc.replace(/'/g, "\\'") + '\')">' + part + '</span>';
+                    html += ' / <span style="cursor:pointer; color:#38bdf8;" data-path="' + escAttr(acc) + '">' + part + '</span>';
                 }
                 el.innerHTML = html;
+                el.querySelectorAll('span[data-path]').forEach(s => {
+                    s.addEventListener('click', () => loadBrowse(s.getAttribute('data-path')));
+                });
             }
             function renderBrowseList(folders, files) {
                 const container = document.getElementById('browseList');
@@ -521,12 +527,18 @@ def index():
                 }
                 let html = '';
                 for (const f of folders) {
-                    html += `<div style="padding:8px; border-bottom:1px solid #1e293b; cursor:pointer; font-size:13px;" onclick="loadBrowse('${f.path.replace(/'/g, "\\'")}')">📁 ${f.name}</div>`;
+                    html += `<div class="browse-folder" data-path="${escAttr(f.path)}" style="padding:8px; border-bottom:1px solid #1e293b; cursor:pointer; font-size:13px;">📁 ${f.name}</div>`;
                 }
                 for (const f of files) {
-                    html += `<div style="padding:8px; border-bottom:1px solid #1e293b; cursor:pointer; font-size:13px;" onclick="importFromSource('${f.path.replace(/'/g, "\\'")}')">📄 ${f.name}</div>`;
+                    html += `<div class="browse-file" data-path="${escAttr(f.path)}" style="padding:8px; border-bottom:1px solid #1e293b; cursor:pointer; font-size:13px;">📄 ${f.name}</div>`;
                 }
                 container.innerHTML = html;
+                container.querySelectorAll('.browse-folder').forEach(el => {
+                    el.addEventListener('click', () => loadBrowse(el.getAttribute('data-path')));
+                });
+                container.querySelectorAll('.browse-file').forEach(el => {
+                    el.addEventListener('click', () => importFromSource(el.getAttribute('data-path')));
+                });
             }
             async function importFromSource(relPath) {
                 const fd = new FormData();
