@@ -1,6 +1,4 @@
 import os
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["ORT_NUM_THREADS"] = "1"
 import re
 import json
 from urllib.parse import quote
