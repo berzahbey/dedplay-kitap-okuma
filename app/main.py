@@ -76,19 +76,13 @@ def ensure_voice_model(lang: str) -> str:
             fcntl.flock(lock_file, fcntl.LOCK_UN)
     return str(onnx_path)
 
-def get_piper_voice(lang: str) -> PiperVoice:
-    if lang not in _VOICE_CACHE:
-        model_file = ensure_voice_model(lang)
-        _VOICE_CACHE[lang] = PiperVoice.load(model_file)
-    return _VOICE_CACHE[lang]
-
 def synthesize_block(text: str, lang: str, out_wav: Path):
-    voice = get_piper_voice(lang)
-    with wave.open(str(out_wav), "wb") as wav_file:
-        wav_file.setnchannels(1)
-        wav_file.setsampwidth(2)
-        wav_file.setframerate(voice.config.sample_rate)
-        voice.synthesize(text, wav_file)
+    model_file = ensure_voice_model(lang)
+    cmd = ["piper", "--model", model_file, "--output_file", str(out_wav)]
+    process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    stdout, stderr = process.communicate(input=text)
+    if process.returncode != 0:
+        raise RuntimeError(f"Piper error ({lang}): {stderr}")
 
 MAX_BLOCK_CHARS = 2000
 
