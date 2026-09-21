@@ -1,5 +1,6 @@
 import re
 from collections import Counter
+from app.turkish_numbers import cardinal, ordinal
 from app.name_phonetics import apply_phonetics
 
 class TextNormalizer:
@@ -54,6 +55,15 @@ class TextNormalizer:
     def normalize_circumflex(cls, text: str) -> str:
         return text.translate(cls._CIRCUMFLEX_MAP)
 
+    _LIST_MARKER = re.compile(r'(?:(?<=^)|(?<=\s))(\d{1,3})\.(?=\s)')
+    _STANDALONE_NUM = re.compile(r'\b(\d{1,6})\b')
+
+    @classmethod
+    def convert_numbers(cls, text: str) -> str:
+        text = cls._LIST_MARKER.sub(lambda m: ordinal(int(m.group(1))), text)
+        text = cls._STANDALONE_NUM.sub(lambda m: cardinal(int(m.group(1))), text)
+        return text
+
     @classmethod
     def normalize(cls, text: str) -> str:
         lines = text.split('\n')
@@ -78,6 +88,5 @@ class TextNormalizer:
             text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
         text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text)
         text = re.sub(r'\s+', ' ', text).strip()
-        text = cls.normalize_circumflex(text)
         text = apply_phonetics(text)
         return text
