@@ -36,7 +36,7 @@ MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 job_status = {}
 _VOICE_CACHE = {}
-MAX_WORKERS = max(1, min(4, multiprocessing.cpu_count() // 2))
+MAX_WORKERS = 1  # Eski sistemin performansını taklit etmek için tek worker, tam thread serbestliği
 
 VOICES = {
     "tr": {"name": "tr_TR-dfki-medium",
