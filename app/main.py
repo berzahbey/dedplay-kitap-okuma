@@ -29,6 +29,7 @@ app = FastAPI(title="Dedplay Kitap Okuma")
 
 
 BOOKS_DIR = Path("/app/books")
+SOURCE_DIR = Path("/app/kaynak-kitaplar")
 AUDIO_DIR = Path("/app/audio")
 MODEL_DIR = Path("/root/.cache/piper")
 BOOKS_DIR.mkdir(parents=True, exist_ok=True)
@@ -313,6 +314,47 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
 def get_status():
     return job_status
 
+@app.get("/browse")
+def browse(path: str = ""):
+    target = (SOURCE_DIR / path).resolve()
+    if not str(target).startswith(str(SOURCE_DIR.resolve())):
+        raise HTTPException(400, "Geçersiz yol")
+    if not target.exists() or not SOURCE_DIR.exists():
+        return {"path": path, "folders": [], "files": []}
+
+    folders, files = [], []
+    for item in sorted(target.iterdir(), key=lambda p: p.name.lower()):
+        if item.name.startswith('.'):
+            continue
+        rel = str(item.relative_to(SOURCE_DIR))
+        if item.is_dir():
+            folders.append({"name": item.name, "path": rel})
+        elif item.suffix.lower() in (".epub", ".pdf"):
+            files.append({"name": item.name, "path": rel})
+    return {"path": path, "folders": folders, "files": files}
+
+@app.post("/import-from-source")
+async def import_from_source(background_tasks: BackgroundTasks, rel_path: str = Form(...)):
+    source_path = (SOURCE_DIR / rel_path).resolve()
+    if not str(source_path).startswith(str(SOURCE_DIR.resolve())):
+        raise HTTPException(400, "Geçersiz yol")
+    if not source_path.exists():
+        raise HTTPException(404, "Dosya bulunamadı")
+
+    filename = source_path.name
+    existing = job_status.get(filename)
+    if existing and existing.get("status") in ("queued", "processing"):
+        return {"filename": filename, "status": "already_running"}
+
+    dest_path = BOOKS_DIR / filename
+    if not dest_path.exists():
+        import shutil
+        shutil.copy(source_path, dest_path)
+
+    job_status[filename] = {"status": "queued", "progress": "Kuyruğa alındı..."}
+    background_tasks.add_task(process_book_pipeline, filename)
+    return {"filename": filename, "status": "queued"}
+
 @app.get("/library")
 def get_library():
     books = []
@@ -415,6 +457,11 @@ def index():
                 <input type="file" id="fileInput" accept=".epub,.pdf" onchange="fileSelected()">
             </div>
             <button onclick="uploadFile()">Dönüşümü Başlat</button>
+
+            <h2 style="color:#38bdf8; font-size:16px; margin-top:25px;">📂 Bağlı Klasörden Seç</h2>
+            <div id="breadcrumb" style="font-size:12px; color:#94a3b8; margin-top:8px;"></div>
+            <div id="browseList" style="max-height:280px; overflow-y:auto; margin-top:8px; background:#0f172a; border-radius:8px; padding:8px;"></div>
+
             <div class="status-list" id="statusList">Aktif işlem yok</div>
 
             <h2 style="color:#38bdf8; font-size:16px; margin-top:30px;">📖 Tamamlanan Kitaplar</h2>
@@ -447,6 +494,53 @@ def index():
                 const keys = Object.keys(data);
                 list.innerHTML = keys.length === 0 ? 'Aktif işlem yok' : keys.map(k => `<div class="job-item"><b>${k}</b><span>${data[k].progress}</span></div>`).join('');
             }
+            let currentBrowsePath = "";
+            async function loadBrowse(path) {
+                currentBrowsePath = path;
+                const res = await fetch('/browse?path=' + encodeURIComponent(path));
+                const data = await res.json();
+                renderBreadcrumb(data.path);
+                renderBrowseList(data.folders, data.files);
+            }
+            function renderBreadcrumb(path) {
+                const el = document.getElementById('breadcrumb');
+                const parts = path ? path.split('/') : [];
+                let html = '<span style="cursor:pointer; color:#38bdf8;" onclick="loadBrowse(\'\')">📁 Kök</span>';
+                let acc = "";
+                for (const part of parts) {
+                    acc = acc ? acc + '/' + part : part;
+                    html += ' / <span style="cursor:pointer; color:#38bdf8;" onclick="loadBrowse(\'' + acc.replace(/'/g, "\\'") + '\')">' + part + '</span>';
+                }
+                el.innerHTML = html;
+            }
+            function renderBrowseList(folders, files) {
+                const container = document.getElementById('browseList');
+                if (folders.length === 0 && files.length === 0) {
+                    container.innerHTML = '<p style="color:#94a3b8; font-size:13px;">Bu klasör boş veya kaynak bağlanmamış.</p>';
+                    return;
+                }
+                let html = '';
+                for (const f of folders) {
+                    html += `<div style="padding:8px; border-bottom:1px solid #1e293b; cursor:pointer; font-size:13px;" onclick="loadBrowse('${f.path.replace(/'/g, "\\'")}')">📁 ${f.name}</div>`;
+                }
+                for (const f of files) {
+                    html += `<div style="padding:8px; border-bottom:1px solid #1e293b; cursor:pointer; font-size:13px;" onclick="importFromSource('${f.path.replace(/'/g, "\\'")}')">📄 ${f.name}</div>`;
+                }
+                container.innerHTML = html;
+            }
+            async function importFromSource(relPath) {
+                const fd = new FormData();
+                fd.append('rel_path', relPath);
+                const res = await fetch('/import-from-source', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (data.status === 'already_running') {
+                    alert('Bu dosya zaten işleniyor.');
+                } else {
+                    alert('Kuyruğa eklendi: ' + data.filename);
+                }
+            }
+            loadBrowse("");
+
             setInterval(pollStatus, 3000); pollStatus();
 
             async function loadLibrary() {
