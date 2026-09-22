@@ -234,7 +234,12 @@ def parse_epub(file_path: Path):
             soup = BeautifulSoup(item.get_content(), 'html.parser')
             text = soup.get_text()
             clean_text = TextNormalizer.normalize(text)
-            if "produced in EPUB format by the Internet Archive" in clean_text[:500]:
+            _IA_NOISE_MARKERS = (
+                "produced in EPUB format by the Internet Archive",
+                "is estimated to be only",
+                "text on this page is estimated",
+            )
+            if any(marker in clean_text[:800] for marker in _IA_NOISE_MARKERS):
                 continue
             if len(clean_text) > 100:
                 title = f"Bolum_{idx:03d}"
