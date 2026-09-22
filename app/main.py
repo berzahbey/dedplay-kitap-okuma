@@ -17,6 +17,9 @@ import mimetypes
 mimetypes.add_type('audio/mp4', '.m4b')
 mimetypes.add_type('audio/mp4', '.m4a')
 import fitz
+import pytesseract
+from PIL import Image
+import io
 import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
@@ -243,9 +246,25 @@ def parse_epub(file_path: Path):
                 idx += 1
     return chapters
 
+def ocr_page(page) -> str:
+    """Sayfanın metin katmanı yoksa (taranmış/görüntü PDF), sayfayı
+    görüntüye çevirip Tesseract OCR ile okur. Yavaş ama gerekli."""
+    pix = page.get_pixmap(dpi=200)
+    img = Image.open(io.BytesIO(pix.tobytes("png")))
+    try:
+        return pytesseract.image_to_string(img, lang="tur")
+    except Exception:
+        return pytesseract.image_to_string(img)
+
+
 def parse_pdf(file_path: Path, max_chunk=4500):
     doc = fitz.open(str(file_path))
-    raw_pages = [page.get_text() for page in doc]
+    raw_pages = []
+    for page in doc:
+        text = page.get_text()
+        if len(text.strip()) < 20:
+            text = ocr_page(page)
+        raw_pages.append(text)
     cleaned_pages = TextNormalizer.strip_running_headers(raw_pages)
     full_text = "\n\n".join(cleaned_pages)
     full_text = TextNormalizer.normalize(full_text)
@@ -271,6 +290,9 @@ def process_book_pipeline(filename: str):
         out_book_dir.mkdir(parents=True, exist_ok=True)
         chapters = parse_epub(file_path) if file_path.suffix.lower() == '.epub' else parse_pdf(file_path)
         total = len(chapters)
+        if total == 0:
+            job_status[filename] = {"status": "error", "progress": "Dosyadan hiç metin çıkarılamadı (boş/bozuk olabilir)."}
+            return
 
         pending = []
         done_count = 0
