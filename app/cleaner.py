@@ -5,10 +5,11 @@ from app.name_phonetics import apply_phonetics
 
 class TextNormalizer:
     ABBREVIATIONS = {
+        # Akademik / mesleki unvanlar
+        r'\bYrd\.\s*Doç\.\s*': 'Yardımcı Doçent ',
         r'\bDr\.\s*': 'Doktor ',
         r'\bProf\.\s*': 'Profesör ',
         r'\bDoç\.\s*': 'Doçent ',
-        r'\bYrd\.\s*Doç\.\s*': 'Yardımcı Doçent ',
         r'\bAv\.\s*': 'Avukat ',
         r'\bMüh\.\s*': 'Mühendis ',
         r'\bNo\.\s*': 'Numara ',
@@ -17,6 +18,16 @@ class TextNormalizer:
         r'\bvd\.\s*': 've diğerleri, ',
         r'\bbkz\.\s*': 'bakınız: ',
         r'\bap\.\s*': 'apartmanı, ',
+
+        # Dini önek/sonekler (peygamberler, sahabe, ayet/hadis saygı ifadeleri)
+        r'\bHz\.\s*': 'Hazreti ',
+        r'\ba\.s\.(?=\s|$|[,.;:])': 'Aleyhisselam',
+        r'\bs\.a\.v\.(?=\s|$|[,.;:])': 'Sallallahu Aleyhi ve Sellem',
+        r'\bs\.a\.s\.(?=\s|$|[,.;:])': 'Sallallahu Aleyhi ve Sellem',
+        r'\br\.a\.(?=\s|$|[,.;:])': 'Radiyallahu Anh',
+        r'\bk\.v\.(?=\s|$|[,.;:])': 'Kerremallahu Vecheh',
+        r'\bc\.c\.(?=\s|$|[,.;:])': 'Celle Celaluhu',
+        r'\bk\.s\.(?=\s|$|[,.;:])': 'Kuddise Sirruh',
     }
 
     _PAGE_NUM_LINE = re.compile(r'^\s*[-–—]?\s*\d{1,4}\s*[-–—]?\s*$')
