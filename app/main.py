@@ -260,10 +260,12 @@ def ocr_page(page) -> str:
 def parse_pdf(file_path: Path, max_chunk=4500):
     doc = fitz.open(str(file_path))
     raw_pages = []
-    for page in doc:
+    total_pages = len(doc)
+    for i, page in enumerate(doc):
         text = page.get_text()
         if len(text.strip()) < 20:
             text = ocr_page(page)
+            print(f"[OCR] {file_path.name} sayfa {i+1}/{total_pages} tarandı", flush=True)
         raw_pages.append(text)
     cleaned_pages = TextNormalizer.strip_running_headers(raw_pages)
     full_text = "\n\n".join(cleaned_pages)
