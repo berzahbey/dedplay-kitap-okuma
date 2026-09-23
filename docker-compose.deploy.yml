@@ -15,3 +15,5 @@ services:
         limits:
           cpus: "20.00"
           memory: 31.09GB
+x-casaos:
+  icon: https://raw.githubusercontent.com/berzahbey/dedplay-kitap-okuma/main/icon.png
