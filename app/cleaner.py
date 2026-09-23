@@ -35,6 +35,7 @@ class TextNormalizer:
     _DOT_LEADER = re.compile(r'\.{4,}\s*\d{0,4}\s*$')
     _SHORT_NUMERIC_LINE = re.compile(r'^[\d\s\-–—.,:;()\[\]/]{1,15}$')
     _FOOTNOTE_MARK = re.compile(r'\[\s*\d+\s*\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+')
+    _SYMBOL_NOISE = re.compile(r'[©®™°§¶†‡]')
 
     @classmethod
     def strip_running_headers(cls, pages):
@@ -97,6 +98,7 @@ class TextNormalizer:
         text = '\n'.join(kept_lines)
 
         text = cls._FOOTNOTE_MARK.sub('', text)
+        text = cls._SYMBOL_NOISE.sub('', text)
         text = re.sub(r'\([A-Za-zÇĞİÖŞÜçğıöşü\s\-]+,\s*\d{4}(?:\s*:\s*\d+)?\)', '', text)
         for pattern, replacement in cls.ABBREVIATIONS.items():
             text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
