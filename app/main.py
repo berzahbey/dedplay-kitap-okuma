@@ -173,26 +173,21 @@ def natural_key(path: Path):
     m = re.match(r"(?:Bolum|Parca)_(\d+)", path.stem)
     return int(m.group(1)) if m else 0
 
-def build_audiobook(book_dir: Path, book_title: str):
-    mp3_files = sorted(
-        [p for p in book_dir.glob("*.mp3")],
-        key=natural_key
-    )
-    if not mp3_files:
-        return None
+MAX_M4B_BYTES = 1_800_000_000  # ~1.8GB güvenli sınır (4GB MP4 limiti altında kalır)
 
-    concat_list = book_dir / "_concat_list.txt"
+def _build_single_m4b(mp3_files, book_dir: Path, output_name: str):
+    concat_list = book_dir / f"_concat_list_{output_name}.txt"
     with open(concat_list, "w", encoding="utf-8") as f:
         for p in mp3_files:
             f.write(f"file \'{p.name}\'\n")
 
-    concat_mp3 = book_dir / "_full_concat.mp3"
+    concat_mp3 = book_dir / f"_full_concat_{output_name}.mp3"
     subprocess.run([
         "ffmpeg", "-y", "-f", "concat", "-safe", "0",
         "-i", str(concat_list), "-c", "copy", str(concat_mp3)
     ], check=True, cwd=str(book_dir), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    meta_path = book_dir / "_chapters.txt"
+    meta_path = book_dir / f"_chapters_{output_name}.txt"
     cursor_ms = 0
     lines = [";FFMETADATA1"]
     for p in mp3_files:
@@ -207,8 +202,7 @@ def build_audiobook(book_dir: Path, book_title: str):
     with open(meta_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
-    safe_title = re.sub(r"[^\w\-() ]", "_", book_title).strip()
-    output_m4b = book_dir / f"{safe_title}.m4b"
+    output_m4b = book_dir / f"{output_name}.m4b"
     subprocess.run([
         "ffmpeg", "-y",
         "-i", str(concat_mp3),
@@ -224,6 +218,42 @@ def build_audiobook(book_dir: Path, book_title: str):
     concat_mp3.unlink(missing_ok=True)
     meta_path.unlink(missing_ok=True)
     return output_m4b
+
+
+def build_audiobook(book_dir: Path, book_title: str):
+    mp3_files = sorted(
+        [p for p in book_dir.glob("*.mp3")],
+        key=natural_key
+    )
+    if not mp3_files:
+        return None
+
+    safe_title = re.sub(r"[^\w\-() ]", "_", book_title).strip()
+    total_bytes = sum(p.stat().st_size for p in mp3_files)
+
+    if total_bytes <= MAX_M4B_BYTES:
+        return _build_single_m4b(mp3_files, book_dir, safe_title)
+
+    # Çok büyük kitap: birden fazla m4b parçasına böl (her biri MAX_M4B_BYTES altında)
+    parts = []
+    current_batch = []
+    current_size = 0
+    for p in mp3_files:
+        size = p.stat().st_size
+        if current_batch and current_size + size > MAX_M4B_BYTES:
+            parts.append(current_batch)
+            current_batch = []
+            current_size = 0
+        current_batch.append(p)
+        current_size += size
+    if current_batch:
+        parts.append(current_batch)
+
+    last_output = None
+    for i, batch in enumerate(parts, start=1):
+        part_name = f"{safe_title} - Kisim {i}"
+        last_output = _build_single_m4b(batch, book_dir, part_name)
+    return last_output
 
 def parse_epub(file_path: Path):
     book = epub.read_epub(str(file_path))
@@ -396,9 +426,11 @@ def get_library():
         if not m4b_files:
             continue
         enc_dir = quote(book_dir.name)
+        m4b_files_sorted = sorted(m4b_files, key=lambda p: p.name)
         books.append({
             "title": book_dir.name,
-            "m4b": f"/audio-files/{enc_dir}/{quote(m4b_files[0].name)}"
+            "m4b": f"/audio-files/{enc_dir}/{quote(m4b_files_sorted[0].name)}",
+            "parts": [f"/audio-files/{enc_dir}/{quote(p.name)}" for p in m4b_files_sorted] if len(m4b_files_sorted) > 1 else None
         })
     return {"books": books}
 
@@ -595,9 +627,17 @@ def index():
                     return;
                 }
                 container.innerHTML = data.books.map(book => {
+                    let player;
+                    if (book.parts) {
+                        player = book.parts.map((p, i) =>
+                            `<div style="margin-top:8px;"><small style="color:#94a3b8;">Kısım ${i+1}/${book.parts.length}</small><audio controls preload="none" style="width:100%;"><source src="${p}" type="audio/mp4"></audio></div>`
+                        ).join('');
+                    } else {
+                        player = `<audio controls preload="none" style="width:100%; margin-top:8px;"><source src="${book.m4b}" type="audio/mp4"></audio>`;
+                    }
                     return `<div style="background:#0f172a; padding:12px; border-radius:8px; margin-bottom:10px;">
                         <b>${book.title}</b>
-                        <audio controls preload="none" style="width:100%; margin-top:8px;"><source src="${book.m4b}" type="audio/mp4"></audio>
+                        ${player}
                     </div>`;
                 }).join('');
             }

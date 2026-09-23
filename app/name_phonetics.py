@@ -50,6 +50,12 @@ PHONETIC_OVERRIDES = {
     "kâinat": "kiainat",
     "kâr": "kiar",
     "kâh": "kiah",
+    "Allah": "Allah",
+    "Allah'ın": "Allahın",
+    "Allah'a": "Allaha",
+    "Allah'ı": "Allahı",
+    "Allah'tan": "Allahtan",
+    "Allah'ım": "Allahım",
 }
 
 def apply_phonetics(text: str) -> str:

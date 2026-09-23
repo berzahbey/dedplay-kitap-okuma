@@ -21,18 +21,19 @@ class TextNormalizer:
 
         # Dini önek/sonekler (peygamberler, sahabe, ayet/hadis saygı ifadeleri)
         r'\bHz\.\s*': 'Hazreti ',
-        r'\ba\.s\.(?=\s|$|[,.;:])': 'Aleyhisselam',
-        r'\bs\.a\.v\.(?=\s|$|[,.;:])': 'Sallallahu Aleyhi ve Sellem',
-        r'\bs\.a\.s\.(?=\s|$|[,.;:])': 'Sallallahu Aleyhi ve Sellem',
-        r'\br\.a\.(?=\s|$|[,.;:])': 'Radiyallahu Anh',
-        r'\bk\.v\.(?=\s|$|[,.;:])': 'Kerremallahu Vecheh',
-        r'\bc\.c\.(?=\s|$|[,.;:])': 'Celle Celaluhu',
-        r'\bk\.s\.(?=\s|$|[,.;:])': 'Kuddise Sirruh',
+        r'\ba\.\s*s\.(?=\s|$|[,.;:])': 'Aleyhisselam',
+        r'\bs\.\s*a\.\s*v\.(?=\s|$|[,.;:])': 'Sallallahu Aleyhi ve Sellem',
+        r'\bs\.\s*a\.\s*s\.(?=\s|$|[,.;:])': 'Sallallahu Aleyhi ve Sellem',
+        r'\br\.\s*a\.(?=\s|$|[,.;:])': 'Radiyallahu Anh',
+        r'\bk\.\s*v\.(?=\s|$|[,.;:])': 'Kerremallahu Vecheh',
+        r'\bc\.\s*c\.(?=\s|$|[,.;:])': 'Celle Celaluhu',
+        r'\bk\.\s*s\.(?=\s|$|[,.;:])': 'Kuddise Sirruh',
     }
 
-    _PAGE_NUM_LINE = re.compile(r'^\s*[-–—]?\s*\d{1,4}\s*[-–—]?\s*$')
+    _PAGE_NUM_LINE = re.compile(r'^\s*[-–—]?\s*\d{1,4}\s*[-–—]?\s*(?:[A-Za-zÇĞİÖŞÜçğıöşü]{1,3}\.\s*\d{1,4})?\s*$')
     _SAYFA_LINE = re.compile(r'^\s*(sayfa|page|s\.)\s*\d{1,4}\s*$', re.IGNORECASE)
     _DOT_LEADER = re.compile(r'\.{4,}\s*\d{0,4}\s*$')
+    _SHORT_NUMERIC_LINE = re.compile(r'^[\d\s\-–—.,:;()\[\]/]{1,15}$')
     _FOOTNOTE_MARK = re.compile(r'\[\s*\d+\s*\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+')
 
     @classmethod
@@ -89,6 +90,8 @@ class TextNormalizer:
             if cls._SAYFA_LINE.match(stripped):
                 continue
             if cls._DOT_LEADER.search(stripped):
+                continue
+            if cls._SHORT_NUMERIC_LINE.match(stripped) and any(c.isdigit() for c in stripped):
                 continue
             kept_lines.append(line)
         text = '\n'.join(kept_lines)
