@@ -306,7 +306,13 @@ def parse_pdf(file_path: Path, max_chunk=4500):
         raw_pages.append(text)
     cleaned_pages = TextNormalizer.strip_running_headers(raw_pages)
     full_text = "\n\n".join(cleaned_pages)
-    full_text = TextNormalizer.normalize(full_text)
+    # ÖNEMLİ: burada tam normalize() ÇAĞRILMAZ -- o, sonunda tüm \n'leri tek
+    # boşluğa çevirip paragraf ayırmayı (aşağıdaki split) devre dışı bırakır,
+    # koca kitap tek "Parca_001" olurdu. Önce satır yapısı dururken sadece
+    # gürültü satırlarını temizliyoruz, paragraflara bölüyoruz, İÇERİK temizliğini
+    # (sembol/sayı/kısaltma/fonetik) her parça İÇİN AYRI AYRI, bölme bittikten
+    # sonra uyguluyoruz.
+    full_text = TextNormalizer.strip_noise_lines(full_text)
 
     paragraphs = [p.strip() for p in re.split(r'\n{1,}', full_text) if p.strip()]
     chunks = []
@@ -319,7 +325,10 @@ def parse_pdf(file_path: Path, max_chunk=4500):
             current = (current + " " + p).strip()
     if current:
         chunks.append(current.strip())
-    return [(f"Parca_{i+1:03d}", c) for i, c in enumerate(chunks)]
+
+    cleaned_chunks = [TextNormalizer.normalize(c) for c in chunks]
+    cleaned_chunks = [c for c in cleaned_chunks if c.strip()]
+    return [(f"Parca_{i+1:03d}", c) for i, c in enumerate(cleaned_chunks)]
 
 def process_book_pipeline(filename: str):
     file_path = BOOKS_DIR / filename

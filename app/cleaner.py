@@ -82,7 +82,12 @@ class TextNormalizer:
         return text
 
     @classmethod
-    def normalize(cls, text: str) -> str:
+    def strip_noise_lines(cls, text: str) -> str:
+        """Sadece satır bazlı gürültüyü (sayfa no, sayfa satırı, nokta dizisi,
+        kısa sayısal satır) temizler; \n yapısını KORUR. PDF'lerde paragraflara
+        ayırmadan ÖNCE (satır yapısı dururken) çağrılmalı -- aksi halde
+        normalize()'in sondaki boşluk-birleştirme adımı tüm satır sonlarını
+        yok edip koca kitabı tek paragrafa (tek bölüme) düşürüyor."""
         lines = text.split('\n')
         kept_lines = []
         for line in lines:
@@ -99,7 +104,11 @@ class TextNormalizer:
             if cls._SHORT_NUMERIC_LINE.match(stripped) and any(c.isdigit() for c in stripped):
                 continue
             kept_lines.append(line)
-        text = '\n'.join(kept_lines)
+        return '\n'.join(kept_lines)
+
+    @classmethod
+    def normalize(cls, text: str) -> str:
+        text = cls.strip_noise_lines(text)
 
         text = cls._FOOTNOTE_MARK.sub('', text)
         text = cls._SYMBOL_NOISE.sub('', text)
