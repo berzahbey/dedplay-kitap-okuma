@@ -34,6 +34,7 @@ class TextNormalizer:
     _SAYFA_LINE = re.compile(r'^\s*(sayfa|page|s\.)\s*\d{1,4}\s*$', re.IGNORECASE)
     _DOT_LEADER = re.compile(r'\.{4,}\s*\d{0,4}\s*$')
     _SHORT_NUMERIC_LINE = re.compile(r'^[\d\s\-–—.,:;()\[\]/]{1,15}$')
+    _TRANSLIT_PAREN = re.compile(r"\([^()]*[â-âîûÂÎÛ][^()]*\)|\([^()]*-[^()]*\)")
     _FOOTNOTE_MARK = re.compile(r'\[\s*\d+\s*\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+')
     _SYMBOL_NOISE = re.compile(r'[©®™°§¶†‡]')
 
@@ -102,6 +103,8 @@ class TextNormalizer:
 
         text = cls._FOOTNOTE_MARK.sub('', text)
         text = cls._SYMBOL_NOISE.sub('', text)
+        text = cls._TRANSLIT_PAREN.sub('', text)
+        text = re.sub(r'\s+([,.;:!?])', r'\1', text)  # silme sonrası kalan " ," gibi boşlukları temizle
         text = re.sub(r'\([A-Za-zÇĞİÖŞÜçğıöşü\s\-]+,\s*\d{4}(?:\s*:\s*\d+)?\)', '', text)
         for pattern, replacement in cls.ABBREVIATIONS.items():
             text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
