@@ -75,7 +75,8 @@ class TextNormalizer:
     @classmethod
     def convert_numbers(cls, text: str) -> str:
         text = cls._DATE_SLASH.sub(r'\1, \2', text)
-        text = cls._LIST_MARKER.sub(lambda m: ordinal(int(m.group(1))), text)
+        # Madde/ayet/liste numaraları ("1.", "27.") artık okunmuyor, tamamen siliniyor.
+        text = cls._LIST_MARKER.sub('', text)
         text = cls._STANDALONE_NUM.sub(lambda m: cardinal(int(m.group(1))), text)
         return text
 
