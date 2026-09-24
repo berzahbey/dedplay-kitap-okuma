@@ -9,6 +9,7 @@ services:
       - "/media/ZimaOS-HD/Media/Music/audio:/app/audio"
       - "/media/ZimaOS-HD/dedplay seslendirme/dedplay seslendirme-voices:/root/.cache/piper"
       - "/media/ZimaOS-HD/Kitap:/app/kaynak-kitaplar:ro"
+      - "/media/ZimaOS-HD/dedplay seslendirme/text:/app/text"
     restart: unless-stopped
     deploy:
       resources:

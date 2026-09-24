@@ -32,10 +32,12 @@ app = FastAPI(title="Dedplay Kitap Okuma")
 
 
 BOOKS_DIR = Path("/app/books")
+TEXT_DIR = Path("/app/text")
 SOURCE_DIR = Path("/app/kaynak-kitaplar")
 AUDIO_DIR = Path("/app/audio")
 MODEL_DIR = Path("/root/.cache/piper")
 BOOKS_DIR.mkdir(parents=True, exist_ok=True)
+TEXT_DIR.mkdir(parents=True, exist_ok=True)
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -331,9 +333,19 @@ def process_book_pipeline(filename: str):
             job_status[filename] = {"status": "error", "progress": "Dosyadan hiç metin çıkarılamadı (boş/bozuk olabilir)."}
             return
 
+        text_book_dir = TEXT_DIR / file_path.stem
+        text_book_dir.mkdir(parents=True, exist_ok=True)
+
         pending = []
         done_count = 0
         for title, text in chapters:
+            txt_path = text_book_dir / f"{title}.txt"
+            if txt_path.exists():
+                # Daha önce elle düzenlenmiş metin varsa onu kullan.
+                text = txt_path.read_text(encoding="utf-8")
+            else:
+                txt_path.write_text(text, encoding="utf-8")
+
             out_mp3 = out_book_dir / f"{title}.mp3"
             if out_mp3.exists():
                 done_count += 1
