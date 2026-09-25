@@ -294,16 +294,38 @@ def ocr_page(page) -> str:
         return pytesseract.image_to_string(img)
 
 
+def _natural_key(p):
+    m = re.search(r"(\d+)", p.stem)
+    return (int(m.group(1)) if m else 0, p.stem)
+
+
+def _ocr_index(args):
+    """Paralel OCR: her işlem PDF'i kendisi açar ve tek bir sayfayı okur."""
+    import os as _os
+    _os.environ["OMP_THREAD_LIMIT"] = "1"  # Tesseract kendi içinde çoğalmasın
+    path, i = args
+    return i, ocr_page(fitz.open(path)[i])
+
+
 def parse_pdf(file_path: Path, max_chunk=4500):
     doc = fitz.open(str(file_path))
     raw_pages = []
     total_pages = len(doc)
+    need_ocr = []
     for i, page in enumerate(doc):
         text = page.get_text()
         if len(text.strip()) < 20:
-            text = ocr_page(page)
-            print(f"[OCR] {file_path.name} sayfa {i+1}/{total_pages} tarandı", flush=True)
+            need_ocr.append(i)
         raw_pages.append(text)
+    if need_ocr:
+        import os as _os
+        workers = max(1, _os.cpu_count() or 1)
+        print(f"[OCR] {file_path.name}: {len(need_ocr)} sayfa {workers} çekirdekle taranacak", flush=True)
+        with ProcessPoolExecutor(max_workers=workers) as ex:
+            jobs = [(str(file_path), i) for i in need_ocr]
+            for n, (i, text) in enumerate(ex.map(_ocr_index, jobs, chunksize=2), 1):
+                raw_pages[i] = text
+                print(f"[OCR] {file_path.name} sayfa {i+1}/{total_pages} tarandı ({n}/{len(need_ocr)})", flush=True)
     cleaned_pages = TextNormalizer.strip_running_headers(raw_pages)
     full_text = "\n\n".join(cleaned_pages)
     # ÖNEMLİ: burada tam normalize() ÇAĞRILMAZ -- o, sonunda tüm \n'leri tek
@@ -336,7 +358,15 @@ def process_book_pipeline(filename: str):
     try:
         out_book_dir = AUDIO_DIR / file_path.stem
         out_book_dir.mkdir(parents=True, exist_ok=True)
-        chapters = parse_epub(file_path) if file_path.suffix.lower() == '.epub' else parse_pdf(file_path)
+        text_book_dir = TEXT_DIR / file_path.stem
+        existing = sorted(text_book_dir.glob("*.txt"), key=_natural_key) if text_book_dir.exists() else []
+        if existing:
+            # Kaldığı yerden devam: metin daha önce çıkarılmış, kitabı yeniden okumaya/OCR'a gerek yok.
+            # (Kitabı baştan okutmak istersen text klasöründeki bu kitabın klasörünü sil.)
+            print(f"[DEVAM] {filename}: {len(existing)} metin parçası hazır, okuma/OCR atlandı", flush=True)
+            chapters = [(p.stem, p.read_text(encoding="utf-8")) for p in existing]
+        else:
+            chapters = parse_epub(file_path) if file_path.suffix.lower() == '.epub' else parse_pdf(file_path)
         total = len(chapters)
         if total == 0:
             job_status[filename] = {"status": "error", "progress": "Dosyadan hiç metin çıkarılamadı (boş/bozuk olabilir)."}
