@@ -422,6 +422,16 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
     background_tasks.add_task(process_book_pipeline, file.filename)
     return {"filename": file.filename, "status": "queued"}
 
+@app.delete("/status/{filename:path}")
+def clear_status(filename: str):
+    """Durum listesinden bir kaydı kaldırır (Stüdyo kullanır). İşlenmekte olan kitaba dokunmaz."""
+    st = job_status.get(filename)
+    if st and st.get("status") == "processing":
+        return {"ok": False, "reason": "işleniyor"}
+    job_status.pop(filename, None)
+    return {"ok": True}
+
+
 @app.get("/status")
 def get_status():
     return job_status
