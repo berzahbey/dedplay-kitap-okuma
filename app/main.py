@@ -283,15 +283,107 @@ def parse_epub(file_path: Path):
                 idx += 1
     return chapters
 
-def ocr_page(page) -> str:
-    """Sayfanın metin katmanı yoksa (taranmış/görüntü PDF), sayfayı
-    görüntüye çevirip Tesseract OCR ile okur. Yavaş ama gerekli."""
-    pix = page.get_pixmap(dpi=200)
-    img = Image.open(io.BytesIO(pix.tobytes("png")))
+def _medyan(xs):
+    xs = sorted(xs)
+    return xs[len(xs) // 2] if xs else 0
+
+
+def _dipnotu_kes(rows, page_h):
+    """rows: [{'h': satır yüksekliği/punto, 'top': y, 'n': kelime sayısı, ...}] (okuma sırasıyla).
+    Sayfanın alt yarısında, ana metinden belirgin küçük puntoyla başlayıp sayfa sonuna kadar süren
+    bölümü (dipnotlar) atar."""
+    govde = [r["h"] for r in rows if r["n"] >= 4 and r["h"] > 0]
+    if len(govde) < 3:
+        return rows
+    ana = _medyan(govde)
+    for idx, r in enumerate(rows):
+        if r["top"] > page_h * 0.45 and 0 < r["h"] < ana * 0.82:
+            kalan = [x for x in rows[idx:] if x["h"] > 0]
+            if kalan and sum(1 for x in kalan if x["h"] < ana * 0.86) >= 0.7 * len(kalan):
+                return rows[:idx]
+    return rows
+
+
+def _ocr_gorsel(img) -> str:
+    """Taranmış sayfayı OCR'lar; dipnotları ve üst simge dipnot işaretlerini ayıklar, paragrafları korur."""
+    from PIL import ImageOps
+    img = ImageOps.autocontrast(img.convert("L"))
     try:
-        return pytesseract.image_to_string(img, lang="tur")
+        d = pytesseract.image_to_data(img, lang="tur", output_type=pytesseract.Output.DICT)
     except Exception:
-        return pytesseract.image_to_string(img)
+        d = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+    satirlar, sira = {}, []
+    for i in range(len(d["text"])):
+        t = (d["text"][i] or "").strip()
+        if not t:
+            continue
+        key = (d["block_num"][i], d["par_num"][i], d["line_num"][i])
+        if key not in satirlar:
+            satirlar[key] = []
+            sira.append(key)
+        satirlar[key].append((d["left"][i], t, d["height"][i], d["top"][i]))
+    rows = []
+    for key in sira:
+        ws = sorted(satirlar[key])
+        hs = [h for _, t, h, _ in ws if any(c.isalpha() for c in t)]
+        rows.append({"key": key, "words": ws, "h": _medyan(hs), "top": min(w[3] for w in ws), "n": len(ws)})
+    rows = _dipnotu_kes(rows, img.size[1])
+    out, onceki = [], None
+    for r in rows:
+        kelimeler = [t for _, t, h, _ in r["words"]
+                     if not (r["h"] and h < r["h"] * 0.6 and re.fullmatch(r"[\d\W]+", t))]  # üst simge işaret
+        par = r["key"][:2]
+        if onceki is not None and par != onceki:
+            out.append("")
+        out.append(" ".join(kelimeler))
+        onceki = par
+    return "\n".join(out)
+
+
+def _metin_katmani(page) -> str:
+    """Metin katmanlı sayfa: punto bilgisiyle dipnotları ve üst simge dipnot numaralarını ayıklar."""
+    rows = []
+    for b in page.get_text("dict").get("blocks", []):
+        for ln in b.get("lines", []):
+            spans = [s for s in ln.get("spans", []) if s.get("text", "").strip()]
+            if not spans:
+                continue
+            boyutlar = [s["size"] for s in spans if any(c.isalpha() for c in s["text"])]
+            h = _medyan(boyutlar) if boyutlar else 0
+            parca = []
+            for s in spans:
+                # üst simge (flags&1) ya da satırdan belirgin küçük rakam: dipnot işareti
+                if (s.get("flags", 0) & 1 or (h and s["size"] < h * 0.75)) and re.fullmatch(r"[\d\s\W]+", s["text"]):
+                    continue
+                parca.append(s["text"])
+            rows.append({"text": "".join(parca), "h": h, "top": ln["bbox"][1], "n": len("".join(parca).split()),
+                         "blok": id(b)})
+    rows = _dipnotu_kes(rows, page.rect.height)
+    rows = [r for r in rows if not re.fullmatch(r"[\d\s\W]{1,4}", r["text"])]  # tek başına dipnot no / sayfa no
+    out, onceki = [], None
+    for r in rows:
+        if onceki is not None and r["blok"] != onceki:
+            out.append("")
+        out.append(r["text"])
+        onceki = r["blok"]
+    return "\n".join(out)
+
+
+def ocr_page(page) -> str:
+    """Sayfanın metin katmanı yoksa (taranmış/görüntü PDF), sayfayı 300 DPI görüntüye çevirip
+    Tesseract OCR ile okur; dipnotları ayıklar."""
+    pix = page.get_pixmap(dpi=300)
+    return _ocr_gorsel(Image.open(io.BytesIO(pix.tobytes("png"))))
+
+
+_TIRE_RE = re.compile(r"(\w)[-‐\u00ad]\s*\n\s*(\w)")
+_YAPISIK_RAKAM_RE = re.compile(r"(?<=[a-zçğıöşüâîû])\d{1,2}(?=[\s.,;:!?”\"')]|$)")
+
+
+def satir_sonu_tirelerini_birlestir(text: str) -> str:
+    """et-\\nmek -> etmek; kelimeye yapışık dipnot numaraları (zorunludur8.) temizlenir."""
+    text = _TIRE_RE.sub(r"\1\2", text)
+    return _YAPISIK_RAKAM_RE.sub("", text)
 
 
 def _natural_key(p):
@@ -313,7 +405,10 @@ def parse_pdf(file_path: Path, max_chunk=4500):
     total_pages = len(doc)
     need_ocr = []
     for i, page in enumerate(doc):
-        text = page.get_text()
+        try:
+            text = _metin_katmani(page)  # dipnotlar ve dipnot numaraları ayıklanır
+        except Exception:
+            text = page.get_text()
         if len(text.strip()) < 20:
             need_ocr.append(i)
         raw_pages.append(text)
@@ -334,6 +429,7 @@ def parse_pdf(file_path: Path, max_chunk=4500):
     # gürültü satırlarını temizliyoruz, paragraflara bölüyoruz, İÇERİK temizliğini
     # (sembol/sayı/kısaltma/fonetik) her parça İÇİN AYRI AYRI, bölme bittikten
     # sonra uyguluyoruz.
+    full_text = satir_sonu_tirelerini_birlestir(full_text)  # satır sonu tireleri: et- mek -> etmek
     full_text = TextNormalizer.strip_noise_lines(full_text)
 
     paragraphs = [p.strip() for p in re.split(r'\n{1,}', full_text) if p.strip()]
