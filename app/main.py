@@ -456,7 +456,26 @@ def process_book_pipeline(filename: str):
         out_book_dir.mkdir(parents=True, exist_ok=True)
         text_book_dir = TEXT_DIR / file_path.stem
         existing = sorted(text_book_dir.glob("*.txt"), key=_natural_key) if text_book_dir.exists() else []
-        if existing:
+        if existing and file_path.suffix.lower() == '.epub':
+            # Dedplay Stüdyo (tur 2/C): kitap düzeltilip yeniden gönderildi. EPUB yeniden okunur; metni aynı kalan bölümün
+            # sesi korunur, metni değişen bölümün txt'si yenilenip sesi silinir (yeniden okunur), artık olmayan bölümler kalkar.
+            chapters = parse_epub(file_path)
+            yeni_adlar = {t for t, _ in chapters}
+            degisen = 0
+            for t, metin in chapters:
+                eski_txt = text_book_dir / f"{t}.txt"
+                if not eski_txt.exists() or eski_txt.read_text(encoding="utf-8") != metin:
+                    eski_txt.write_text(metin, encoding="utf-8")
+                    (out_book_dir / f"{t}.mp3").unlink(missing_ok=True)
+                    degisen += 1
+            for p in list(text_book_dir.glob("*.txt")):
+                if p.stem not in yeni_adlar:
+                    p.unlink(missing_ok=True)
+                    (out_book_dir / f"{p.stem}.mp3").unlink(missing_ok=True)
+            for m in out_book_dir.glob("*.m4b"):
+                m.unlink(missing_ok=True)   # M4B yeni bölümlerle yeniden kurulur
+            print(f"[YENILE] {filename}: {len(chapters)} bölüm, {degisen} bölümün metni değişti", flush=True)
+        elif existing:
             # Kaldığı yerden devam: metin daha önce çıkarılmış, kitabı yeniden okumaya/OCR'a gerek yok.
             # (Kitabı baştan okutmak istersen text klasöründeki bu kitabın klasörünü sil.)
             print(f"[DEVAM] {filename}: {len(existing)} metin parçası hazır, okuma/OCR atlandı", flush=True)
