@@ -83,7 +83,7 @@ def ensure_voice_model(lang: str) -> str:
             fcntl.flock(lock_file, fcntl.LOCK_UN)
     return str(onnx_path)
 
-def synthesize_block(text: str, lang: str, out_wav: Path):
+def _synthesize_block_piper(text: str, lang: str, out_wav: Path):
     t0 = time.time()
     model_file = ensure_voice_model(lang)
     t1 = time.time()
@@ -822,3 +822,43 @@ def index():
     </body>
     </html>
     """
+
+
+
+# ---- Arapça için ikinci motor: tts_arabic FastPitch (ses 1); hata olursa Piper ----
+import re as _re
+import tempfile as _tempfile
+
+ARAPCA_SES = 1
+ARAPCA_HIZ = 0.9
+
+
+def arapca_seslendirme_duzelt(t: str) -> str:
+    """Yalnız seslendirmeye giden Arapça: Kur'an'a özgü işaretler standart hale getirilir (yazılı metne dokunulmaz)."""
+    t = _re.sub("[\u06D6-\u06ED\u0640]", "", t)                                   # vakıf işaretleri, uzatma çizgisi
+    t = t.replace("\u0671", "\u0627")                                              # vasıl elifi -> elif
+    t = _re.sub("(?:(?<=\\s)|^)\u0627(?=[\u064E\u064F])", "\u0623", t)             # kelime başı اَ اُ -> أَ أُ
+    t = _re.sub("(?:(?<=\\s)|^)\u0627(?=\u0650)", "\u0625", t)                     # kelime başı اِ -> إِ
+    t = _re.sub("(?<=\u0650)\u0649", "\u064A", t)                                  # kesreden sonra ى -> ي
+    t = _re.sub("\u064E?\u0670", "\u064E\u0627", t)                                # küçük elif -> üstün + elif
+    t = _re.sub("([\u064B-\u0650\u0652])(\u0651)", "\\2\\1", t)                    # şedde harekeden önce
+    t = _re.sub("[^\u0600-\u06FF\\s.,!?؟،؛]", " ", t)                              # Latin harf/sayı motoru şaşırtmasın
+    return _re.sub("\\s+", " ", t).strip()
+
+
+def synthesize_block(text: str, lang: str, out_wav: Path):
+    if lang == "ar":
+        try:
+            from tts_arabic import tts as _ar_tts
+            metin = arapca_seslendirme_duzelt(text)
+            if metin:
+                with _tempfile.TemporaryDirectory() as d:
+                    ham = os.path.join(d, "ar.wav")
+                    _ar_tts(metin, speaker=ARAPCA_SES, pace=ARAPCA_HIZ, play=False, save_to=ham,
+                            bits_per_sample=16, cuda=False)
+                    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", ham, "-ar", "22050", "-ac", "1",
+                                    "-sample_fmt", "s16", str(out_wav)], check=True)
+                return
+        except Exception as e:
+            print(f"Arapça motor (FastPitch) hata verdi, Piper ile okunuyor: {type(e).__name__}: {e}", flush=True)
+    return _synthesize_block_piper(text, lang, out_wav)

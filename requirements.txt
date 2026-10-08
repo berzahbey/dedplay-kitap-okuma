@@ -11,3 +11,4 @@ beautifulsoup4==4.12.3
 requests==2.32.3
 pytesseract==0.3.13
 Pillow==10.4.0
+tts_arabic @ https://github.com/nipponjo/tts_arabic/archive/refs/heads/main.zip

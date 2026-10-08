@@ -7,3 +7,4 @@ voices/*
 __pycache__/
 *.pyc
 .DS_Store
+*.yedek-*
