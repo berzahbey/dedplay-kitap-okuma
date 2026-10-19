@@ -37,6 +37,10 @@ class TextNormalizer:
     _TRANSLIT_PAREN = re.compile(r"\([^()]*[â-âîûÂÎÛ][^()]*\)|\([^()]*-[^()]*\)")
     _FOOTNOTE_MARK = re.compile(r'\[\s*\d+\s*\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+')
     _SYMBOL_NOISE = re.compile(r'[©®™°§¶†‡]')
+    # 19 Ekim: yildiz ve sus isaretleri seslendirmede okunmasin (Piper '*' isaretini 'yildiz' diye okuyordu).
+    _YILDIZ_ATIF = re.compile(r'\(\s*\*{1,3}\s*\):?')                                # (*), (**) atif
+    _AR_YILDIZ = re.compile(r'(?<=[\u0600-\u06FF])\s*\*+\s*(?=[\u0600-\u06FF])')   # Arapca misra ayraci
+    _SUS = re.compile(r'[*•●○◦▪▫■□◆◇♦❖※★☆✱✲✳❀✿#~^_|]')
 
     @classmethod
     def strip_running_headers(cls, pages):
@@ -112,6 +116,10 @@ class TextNormalizer:
 
         text = cls._FOOTNOTE_MARK.sub('', text)
         text = cls._SYMBOL_NOISE.sub('', text)
+        text = cls._YILDIZ_ATIF.sub('', text)
+        text = cls._AR_YILDIZ.sub(' \u060c ', text)  # misra arasi: Arapca virgul (kisa durak)
+        text = cls._SUS.sub(' ', text)
+        text = text.replace('`', "'")
         text = cls._TRANSLIT_PAREN.sub('', text)
         text = re.sub(r'\s+([,.;:!?])', r'\1', text)  # silme sonrası kalan " ," gibi boşlukları temizle
         text = re.sub(r'\([A-Za-zÇĞİÖŞÜçğıöşü\s\-]+,\s*\d{4}(?:\s*:\s*\d+)?\)', '', text)
